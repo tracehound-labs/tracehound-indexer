@@ -184,7 +184,20 @@ func (s *PostgresStore) BatchInsert(ctx context.Context, events []blockchain.Raw
 
 // batchInsertFallback uses individual INSERT statements with ON CONFLICT.
 // This handles cases where COPY doesn't work or conflicts need to be ignored.
-func (s *PostgresStore) batchInsertFallback(ctx context.Context, tx *sql.Tx, events []blockchain.RawEvent) error {
+// Note: This creates a NEW transaction since the original may have failed.
+func (s *PostgresStore) batchInsertFallback(ctx context.Context, oldTx *sql.Tx, events []blockchain.RawEvent) error {
+	// Rollback the old transaction if it exists (it may be in aborted state)
+	if oldTx != nil {
+		_ = oldTx.Rollback()
+	}
+
+	// Start a fresh transaction
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin fallback transaction: %w", err)
+	}
+	defer tx.Rollback() // nolint:errcheck
+
 	// Build multi-value INSERT with ON CONFLICT DO NOTHING
 	const baseQuery = `
 		INSERT INTO whale_scents (tx_hash, block_height, event_type, timestamp, trader, symbol, raw_data)
@@ -220,7 +233,7 @@ func (s *PostgresStore) batchInsertFallback(ctx context.Context, tx *sql.Tx, eve
 
 	query := baseQuery + strings.Join(valueStrings, ", ") + conflictClause
 
-	_, err := tx.ExecContext(ctx, query, valueArgs...)
+	_, err = tx.ExecContext(ctx, query, valueArgs...)
 	if err != nil {
 		return fmt.Errorf("failed to execute batch insert: %w", err)
 	}

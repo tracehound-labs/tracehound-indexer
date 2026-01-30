@@ -77,6 +77,9 @@ func (c *HyperliquidClient) Connect() error {
 		return fmt.Errorf("failed to dial WebSocket: %w", err)
 	}
 
+	// Set read limit to 10MB to handle large messages
+	conn.SetReadLimit(10 * 1024 * 1024)
+
 	c.mu.Lock()
 	c.conn = conn
 	c.isConnected = true
@@ -99,40 +102,65 @@ func (c *HyperliquidClient) Connect() error {
 	return nil
 }
 
+// TopCoins are the most actively traded coins on Hyperliquid to track.
+// Start with a smaller set to avoid overwhelming the WebSocket connection.
+var TopCoins = []string{
+	"BTC", "ETH", "SOL",
+}
+
 // subscribe sends subscription messages to the Hyperliquid WebSocket.
-// TODO: Adjust according to actual Hyperliquid WebSocket API
+// Based on Hyperliquid WebSocket API: https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/websocket/subscriptions
 func (c *HyperliquidClient) subscribe() error {
-	// Subscribe to all trades
-	// TODO: Adjust subscription types based on actual Hyperliquid API
-	subscriptions := []SubscriptionRequest{
-		{
-			Method: "subscribe",
-			Subscription: Subscription{
-				Type: "allMids",
-			},
+	// Subscribe to allMids for price updates (validates connection)
+	allMidsSub := SubscriptionRequest{
+		Method: "subscribe",
+		Subscription: Subscription{
+			Type: "allMids",
 		},
-		{
+	}
+
+	data, err := json.Marshal(allMidsSub)
+	if err != nil {
+		return fmt.Errorf("failed to marshal allMids subscription: %w", err)
+	}
+
+	if err := c.conn.Write(c.ctx, websocket.MessageText, data); err != nil {
+		return fmt.Errorf("failed to send allMids subscription: %w", err)
+	}
+	c.logger.Debug("📡 Subscribed to allMids")
+
+	// Small delay to let the server process
+	time.Sleep(100 * time.Millisecond)
+
+	// Subscribe to trades for each top coin
+	// Note: Hyperliquid requires specifying coin for trades subscription
+	for _, coin := range TopCoins {
+		sub := SubscriptionRequest{
 			Method: "subscribe",
 			Subscription: Subscription{
 				Type: "trades",
+				Coin: coin,
 			},
-		},
-		// TODO: Add more subscriptions as needed (positions, liquidations)
-	}
+		}
 
-	for _, sub := range subscriptions {
 		data, err := json.Marshal(sub)
 		if err != nil {
-			return fmt.Errorf("failed to marshal subscription: %w", err)
+			c.logger.WithError(err).WithField("coin", coin).Warn("Failed to marshal trades subscription")
+			continue
 		}
 
 		if err := c.conn.Write(c.ctx, websocket.MessageText, data); err != nil {
-			return fmt.Errorf("failed to send subscription: %w", err)
+			c.logger.WithError(err).WithField("coin", coin).Warn("Failed to send trades subscription")
+			continue
 		}
 
-		c.logger.WithField("type", sub.Subscription.Type).Debug("📡 Subscription sent")
+		c.logger.WithField("coin", coin).Debug("📡 Subscribed to trades")
+
+		// Small delay between subscriptions to avoid overwhelming the server
+		time.Sleep(50 * time.Millisecond)
 	}
 
+	c.logger.WithField("coins", len(TopCoins)).Info("👃 Subscribed to trade feeds")
 	return nil
 }
 
@@ -304,6 +332,9 @@ func (c *HyperliquidClient) reconnect() {
 			}
 			continue
 		}
+
+		// Set read limit to 10MB
+		conn.SetReadLimit(10 * 1024 * 1024)
 
 		c.mu.Lock()
 		c.conn = conn

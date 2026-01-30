@@ -53,18 +53,17 @@ func (d *Decoder) DecodeMessage(data []byte) ([]RawEvent, error) {
 	}
 }
 
-// TradeEventData represents the expected format of trade events from Hyperliquid.
-// TODO: Adjust according to actual Hyperliquid WebSocket API
+// TradeEventData represents the actual format of trade events from Hyperliquid.
+// Based on: https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/websocket/subscriptions
 type TradeEventData struct {
-	Hash   string `json:"hash"`
-	Height uint64 `json:"height"`
-	Time   int64  `json:"time"`
-	User   string `json:"user"`
-	Coin   string `json:"coin"`
-	Side   string `json:"side"`
-	Px     string `json:"px"`
-	Sz     string `json:"sz"`
-	Fee    string `json:"fee,omitempty"`
+	Coin  string   `json:"coin"`
+	Side  string   `json:"side"`
+	Px    string   `json:"px"`
+	Sz    string   `json:"sz"`
+	Hash  string   `json:"hash"`
+	Time  int64    `json:"time"`
+	Tid   int64    `json:"tid"`            // 50-bit hash of (buyer_oid, seller_oid)
+	Users []string `json:"users"`          // [buyer, seller]
 }
 
 // decodeTradeEvents decodes trade channel messages.
@@ -94,6 +93,8 @@ func (d *Decoder) decodeTradeEvents(data json.RawMessage) ([]RawEvent, error) {
 }
 
 // tradeToRawEvent converts a TradeEventData to a RawEvent.
+// For trades, we track the taker (the one who initiated the trade).
+// Side indicates taker's side: "B" = buyer is taker, "A" = seller is taker
 func (d *Decoder) tradeToRawEvent(e TradeEventData, rawData []byte) RawEvent {
 	timestamp := time.Unix(e.Time/1000, (e.Time%1000)*1000000)
 	if e.Time < 1e12 {
@@ -101,12 +102,26 @@ func (d *Decoder) tradeToRawEvent(e TradeEventData, rawData []byte) RawEvent {
 		timestamp = time.Unix(e.Time, 0)
 	}
 
+	// Determine the taker based on side
+	// "B" = buyer is taker (index 0), "A" = seller is taker (index 1)
+	trader := ""
+	if len(e.Users) >= 2 {
+		if e.Side == "B" {
+			trader = e.Users[0] // buyer is taker
+		} else {
+			trader = e.Users[1] // seller is taker
+		}
+	} else if len(e.Users) == 1 {
+		trader = e.Users[0]
+	}
+
+	// Use tid as a pseudo block height since Hyperliquid doesn't provide block height
 	return RawEvent{
 		TxHash:      e.Hash,
-		BlockHeight: e.Height,
+		BlockHeight: uint64(e.Tid),
 		Timestamp:   timestamp,
 		EventType:   EventTypeTrade,
-		Trader:      e.User,
+		Trader:      trader,
 		Symbol:      e.Coin,
 		RawData:     rawData,
 	}

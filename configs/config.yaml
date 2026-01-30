@@ -1,0 +1,39 @@
+# Tracehound Indexer Configuration
+# 🐕 Sniff out smart money on Hyperliquid
+
+# Hyperliquid WebSocket connection settings
+hyperliquid:
+  ws_url: "wss://api.hyperliquid.xyz/ws"
+  reconnect_interval: 5s
+  max_reconnect_attempts: 0  # 0 = infinite (the hound never gives up)
+
+# PostgreSQL database settings
+postgres:
+  host: localhost
+  port: 5432
+  database: tracehound
+  user: hound
+  password: ${POSTGRES_PASSWORD:-trackhound123}
+  sslmode: disable
+  max_connections: 25
+  idle_connections: 5
+  conn_max_lifetime: 5m
+
+# Kafka producer settings
+kafka:
+  brokers:
+    - localhost:9092
+  topic: whale_scents
+  batch_size: 100
+  batch_timeout: 10ms
+  compression: snappy  # snappy, gzip, lz4, zstd, or none
+
+# Logging configuration
+logging:
+  level: info  # debug, info, warn, error
+  format: json  # json or text
+
+# Event batching settings
+batch:
+  size: 100      # Max events per batch
+  timeout: 1s    # Flush timeout

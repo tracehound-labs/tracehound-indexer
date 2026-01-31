@@ -32,6 +32,9 @@ type HyperliquidConfig struct {
 
 	// MaxReconnectAttempts is the maximum reconnection attempts (0 = infinite)
 	MaxReconnectAttempts int `yaml:"max_reconnect_attempts"`
+
+	// TrackCoins is the list of coins to track trades for
+	TrackCoins []string `yaml:"track_coins"`
 }
 
 // PostgresConfig holds database connection settings.
@@ -95,6 +98,7 @@ func DefaultConfig() *Config {
 			WSURL:                "wss://api.hyperliquid.xyz/ws",
 			ReconnectInterval:    5 * time.Second,
 			MaxReconnectAttempts: 0, // Infinite
+			TrackCoins:           []string{"BTC", "ETH", "SOL", "HYPE"},
 		},
 		Postgres: PostgresConfig{
 			Host:            "localhost",
@@ -185,6 +189,20 @@ func applyEnvOverrides(cfg *Config) {
 	// Hyperliquid settings
 	if val := os.Getenv("HYPERLIQUID_WS_URL"); val != "" {
 		cfg.Hyperliquid.WSURL = val
+	}
+	if val := os.Getenv("TRACK_COINS"); val != "" {
+		// Parse comma-separated list of coins
+		coins := strings.Split(val, ",")
+		cleanCoins := make([]string, 0, len(coins))
+		for _, coin := range coins {
+			coin = strings.TrimSpace(coin)
+			if coin != "" {
+				cleanCoins = append(cleanCoins, strings.ToUpper(coin))
+			}
+		}
+		if len(cleanCoins) > 0 {
+			cfg.Hyperliquid.TrackCoins = cleanCoins
+		}
 	}
 
 	// PostgreSQL settings

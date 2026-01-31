@@ -124,7 +124,7 @@ func main() {
 	defer producer.Close()
 
 	// Initialize Hyperliquid WebSocket client
-	client := blockchain.NewHyperliquidClient(cfg.Hyperliquid.WSURL, logger)
+	client := blockchain.NewHyperliquidClient(cfg.Hyperliquid.WSURL, cfg.Hyperliquid.TrackCoins, logger)
 
 	// Connect to Hyperliquid
 	if err := client.Connect(); err != nil {

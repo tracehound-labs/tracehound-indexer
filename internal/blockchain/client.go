@@ -34,21 +34,26 @@ const (
 // HyperliquidClient tracks whale movements on the Hyperliquid blockchain.
 // Like a loyal hound, it maintains connection even when the trail goes cold.
 type HyperliquidClient struct {
-	wsURL     string
-	conn      *websocket.Conn
-	eventChan chan RawEvent
-	ctx       context.Context
-	cancel    context.CancelFunc
-	logger    *logrus.Logger
+	wsURL      string
+	trackCoins []string
+	conn       *websocket.Conn
+	eventChan  chan RawEvent
+	ctx        context.Context
+	cancel     context.CancelFunc
+	logger     *logrus.Logger
 
 	mu           sync.RWMutex
 	isConnected  bool
 	reconnecting bool
 }
 
+// DefaultTrackCoins are the default coins to track if none specified.
+var DefaultTrackCoins = []string{"BTC", "ETH", "SOL", "HYPE"}
+
 // NewHyperliquidClient creates a new client ready to sniff blockchain events.
 // The wsURL should be the Hyperliquid WebSocket endpoint (e.g., wss://api.hyperliquid.xyz/ws)
-func NewHyperliquidClient(wsURL string, logger *logrus.Logger) *HyperliquidClient {
+// trackCoins specifies which coins to subscribe to for trade events.
+func NewHyperliquidClient(wsURL string, trackCoins []string, logger *logrus.Logger) *HyperliquidClient {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	if logger == nil {
@@ -56,12 +61,18 @@ func NewHyperliquidClient(wsURL string, logger *logrus.Logger) *HyperliquidClien
 		logger.SetFormatter(&logrus.JSONFormatter{})
 	}
 
+	// Use defaults if no coins specified
+	if len(trackCoins) == 0 {
+		trackCoins = DefaultTrackCoins
+	}
+
 	return &HyperliquidClient{
-		wsURL:     wsURL,
-		eventChan: make(chan RawEvent, DefaultEventBufferSize),
-		ctx:       ctx,
-		cancel:    cancel,
-		logger:    logger,
+		wsURL:      wsURL,
+		trackCoins: trackCoins,
+		eventChan:  make(chan RawEvent, DefaultEventBufferSize),
+		ctx:        ctx,
+		cancel:     cancel,
+		logger:     logger,
 	}
 }
 
@@ -102,12 +113,6 @@ func (c *HyperliquidClient) Connect() error {
 	return nil
 }
 
-// TopCoins are the most actively traded coins on Hyperliquid to track.
-// Start with a smaller set to avoid overwhelming the WebSocket connection.
-var TopCoins = []string{
-	"BTC", "ETH", "SOL",
-}
-
 // subscribe sends subscription messages to the Hyperliquid WebSocket.
 // Based on Hyperliquid WebSocket API: https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/websocket/subscriptions
 func (c *HyperliquidClient) subscribe() error {
@@ -132,9 +137,9 @@ func (c *HyperliquidClient) subscribe() error {
 	// Small delay to let the server process
 	time.Sleep(100 * time.Millisecond)
 
-	// Subscribe to trades for each top coin
+	// Subscribe to trades for each configured coin
 	// Note: Hyperliquid requires specifying coin for trades subscription
-	for _, coin := range TopCoins {
+	for _, coin := range c.trackCoins {
 		sub := SubscriptionRequest{
 			Method: "subscribe",
 			Subscription: Subscription{
@@ -160,7 +165,10 @@ func (c *HyperliquidClient) subscribe() error {
 		time.Sleep(50 * time.Millisecond)
 	}
 
-	c.logger.WithField("coins", len(TopCoins)).Info("👃 Subscribed to trade feeds")
+	c.logger.WithFields(logrus.Fields{
+		"coins": c.trackCoins,
+		"count": len(c.trackCoins),
+	}).Info("👃 Subscribed to trade feeds")
 	return nil
 }
 

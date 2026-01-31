@@ -14,7 +14,7 @@
 BINARY_NAME=indexer
 BINARY_DIR=bin
 CMD_DIR=cmd/indexer
-DOCKER_COMPOSE=docker-compose -f deployments/docker-compose.yml
+DOCKER_COMPOSE=docker-compose -f deployments/docker-compose.yml --env-file .env
 GO=go
 GOFMT=gofmt
 GOVET=$(GO) vet

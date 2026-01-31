@@ -1,8 +1,9 @@
 # Tracehound Indexer - Docker Compose Configuration
 # 🐕 Complete development environment with all dependencies
 #
-# Usage:
-#   docker-compose -f deployments/docker-compose.yml up -d
+# Usage (from project root):
+#   docker-compose -f deployments/docker-compose.yml --env-file .env up -d
+#   OR use: make docker-up
 #
 # Services:
 #   - postgres: PostgreSQL database for storing whale scents (internal only)
